@@ -1,3 +1,1 @@
-# three-demo
-
-## three.js绘制地图
+## Three Demo
