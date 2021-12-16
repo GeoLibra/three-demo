@@ -1,13 +1,19 @@
 /* eslint-disable */
 import React, { useEffect, useCallback } from "react";
-import { BufferGeometry, Scene, Mesh, Line, Color, Object3D, Shape, LineBasicMaterial, Vector3, ExtrudeGeometry, MeshBasicMaterial, PerspectiveCamera, WebGLRenderer, DirectionalLight, AxesHelper, GridHelper, CubicBezierCurve3, ShaderMaterial, Points, Ray, SphereGeometry, MeshPhongMaterial, Group } from "three";
+import { BufferGeometry, Scene, Mesh, Line, Color, Object3D, Shape, LineBasicMaterial, Vector3, ExtrudeGeometry, MeshBasicMaterial, PerspectiveCamera, WebGLRenderer, DirectionalLight, AxesHelper, GridHelper, CubicBezierCurve3, ShaderMaterial, Points, Ray, SphereGeometry, MeshPhongMaterial, Group, CatmullRomCurve3 } from "three";
 import * as d3geo from "d3-geo";
 import Orbitcontrols from "three-orbitcontrols";
+import { FlyLine } from './flyline';
+import { FlyByMeshLine } from './meshline';
+import { PointsFlyLine } from './PointsFlyLine';
 import mapJson from "./map.json";
+import TWEEN from '@tweenjs/tween.js';
 import "./index.css";
 export const Map = () => {
-  const posArr = [{ "x": 0.5738958419746141, "y": -0.44114968930852216, "z": 4.9473255920938985 }, { "x": -0.9326350073394328, "y": 2.8399222968004114, "z": -4.00812091773949 }, { "x": 3.469198597393574, "y": 1.2295167303380952, "z": -3.3842206934036057 }, { "x": -2.4019084876611916, "y": -2.190220428765315, "z": 3.7991801866087123 }, { "x": -2.49363689878109, "y": -4.099696049856375, "z": 1.4050862307450966 }, { "x": -2.3729307780326305, "y": 2.840227787960863, "z": 3.3618901878497454 }, { "x": -2.0636200279017873, "y": 0.7444294629976027, "z": -4.493027615657812 }, { "x": 0.47725894517680106, "y": 2.4327372143508037, "z": -4.34212085796347 }, { "x": -2.4777001955161246, "y": -1.2092952460724242, "z": 4.171163716394502 }, { "x": -0.03915748918627658, "y": -0.008362945319338826, "z": 4.999839672648135 }, { "x": 1.5223738738260317, "y": -1.032865814102439, "z": -4.649254348640267 }, { "x": -0.26640112020426315, "y": -4.314854187280748, "z": 2.5121830716848077 }, { "x": -4.031470206741836, "y": -2.606648761952297, "z": -1.3973654511134501 }, { "x": 0.8544382232162094, "y": 1.5274953155132989, "z": 4.683662390031124 }, { "x": 3.0409624989238546, "y": 1.76433738825175, "z": -3.555230043268055 }, { "x": -4.721251023266457, "y": 1.2354922989397954, "z": -1.0878177947459262 }, { "x": 2.1518961827021106, "y": 3.891904027152385, "z": -2.285262755638206 }, { "x": 0.8501960736517479, "y": -2.851729208821255, "z": -4.018060123480341 }, { "x": 2.5631840141785176, "y": 4.263234820997851, "z": -0.5048926326370041 }, { "x": -0.4580143454812531, "y": -2.6523265200067385, "z": 4.213714144386437 }];
-  let map, scene, camera, renderer, pointsGroup = new Group(), flylinegroup = [], linegroup = [];
+  let map, scene, camera, renderer, pointsGroup = new Group(), linegroup = new Group();
+  const flyLine = new FlyLine();
+  const flyByMeshLine = new FlyByMeshLine();
+
   const radius = 5;
   const initMap = useCallback(() => {
     const prj = d3geo
@@ -60,43 +66,6 @@ export const Map = () => {
     });
     scene.add(map);
   }, [map, scene])
-
-  const addflyline = (minx, maxx, colorf2, colort2) => {
-    let colorf = colorf2 || {
-      r: 0.0,
-      g: 0.0,
-      b: 0.0
-    };
-    let colort = colort2 || {
-      r: 1.0,
-      g: 1.0,
-      b: 1.0
-    };
-    const curve = new CubicBezierCurve3(
-      new Vector3(minx, 0, minx),
-      new Vector3(minx / 2, maxx % 70 + 100, maxx / 2),
-      new Vector3(maxx / 2, maxx % 70 + 70, maxx / 2),
-      new Vector3(maxx, 0, maxx)
-    );
-    const points = curve.getPoints((maxx - minx) * 5);
-    const geometry = new BufferGeometry().setFromPoints(points);
-    const material = createMaterial("vertex-shader", "fragment-shader-7");
-    const flyline = new Points(geometry, material);
-    flyline.material.uniforms.time.value = minx;
-    flyline.material.uniforms.colorf = {
-      type: 'v3',
-      value: new Vector3(colorf.r, colorf.g, colorf.b)
-    };
-    flyline.material.uniforms.colort = {
-      type: 'v3',
-      value: new Vector3(colort.r, colort.g, colort.b)
-    };
-
-    flyline.minx = minx;
-    flyline.maxx = maxx;
-    linegroup.push(flyline);
-    scene.add(flyline);
-  }
 
   const initThree = useCallback(() => {
     scene = new Scene();
@@ -219,67 +188,6 @@ export const Map = () => {
     renderer.setSize(window.innerWidth / window.innerHeight);
   }, [camera, renderer]);
 
-  const createMaterial = () => {
-    const vertexShader = `
-      uniform float time;
-      uniform float size;
-      varying vec3 iPosition;
-
-      void main(){
-        iPosition=vec3(position);
-        float end=time+size;
-        float pointsize=1.;
-        if(position.x>time && position.x<end){
-          pointsize=(position.x-time)/size;
-        }
-        gl_PointSize=pointsize*2.;
-        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);
-      }
-    `;
-    const fragmentShader = `
-      uniform float time;
-      uniform float size;
-      varying vec3 iPosition;
-
-      void main(){
-        float end=time+size;
-        vec4 color;
-        if(iPosition.x>end||iPosition.x<time){
-          discard;
-        }else if(iPosition.x>time&&iPosition.x<end){
-          float ca=fract((iPosition.x-time)/size);
-          color=vec4(ca/1.9,ca,ca/1.6,1.);
-        }
-
-        float d=distance(gl_PointCoord,vec2(.5,.5));
-        if(abs(iPosition.x-end)<.2||abs(iPosition.x-time)<.2){
-          if(d>.1){
-            discard;
-          }
-        }
-        gl_FragColor=color;
-      }
-    `;
-    // 配置着色器里的attribute变量
-    const attribute = {};
-    const uniforms = {
-      time: {
-        type: 'f',
-        value: -70.0
-      },
-      size: { type: 'f', value: 20.0 }
-    };
-
-    const meshMaterial = new ShaderMaterial({
-      uniforms,
-      defaultAttributeValues: attribute,
-      vertexShader,
-      fragmentShader,
-      transparent: true
-    });
-    return meshMaterial;
-  }
-
   // 计算v1,v2 的中点
   const getVCenter = (v1, v2) => {
     let v = v1.add(v2);
@@ -292,33 +200,6 @@ export const Map = () => {
     return v1.lerp(v2, len / v1v2Len);
   }
 
-  const addFlyLine = useCallback((v0, v3) => {
-    const angle = (v0.angleTo(v3) * 1.8) / Math.PI / 0.1; // 0 ~ Math.PI
-    const aLen = angle * 0.4,
-      hLen = angle * angle * 12,
-      p0 = new Vector3(0, 0, 0);
-
-    const rayLine = new Ray(p0, getVCenter(v0.clone(), v3.clone()));
-
-    let flyline;
-    // 顶点坐标
-    const vtop = rayLine.at(hLen / rayLine.at(1).distanceTo(p0), v3);
-
-    // 控制点坐标
-    const v1 = getLenVcetor(v0.clone(), vtop, aLen);
-    const v2 = getLenVcetor(v3.clone(), vtop, aLen);
-
-    // CatmullRomCurve3
-    const curve = new CubicBezierCurve3(v0, v1, v2, v3);
-    const points = curve.getPoints(50);
-    const geometry = new BufferGeometry().setFromPoints(points);
-    geometry.colors = curve.getPoints(50).map((item, index) => index > 25 ? new Color(0xFAE161) : new Color(0xFF0000))
-    const material = createMaterial();
-    // meshLine
-    flyline = new Points(geometry, material);
-    flylinegroup.add(flyline);
-  }, [scene])
-
 
   // 动画循环
   const loop = useCallback(() => {
@@ -326,35 +207,15 @@ export const Map = () => {
     render()
     requestAnimationFrame(loop)
   }, [])
-  // 渲染画布
-  const render = useCallback(() => {
-    renderer.render(scene, camera);
-  }, [])
-
-  const onMouseMove = (event) => {
-    event.preventDefault();
-  }
-  const randomPoint = useCallback((group, radius) => {
-    const arr = posArr.map(pos => {
-      const dotGeo = new SphereGeometry(0.1, 0.2, 0.2);
-      const dotMater = new MeshPhongMaterial({ color: 'tomato' });
-      const dotMesh = new Mesh(dotGeo, dotMater);
-      // const pos = getPos(radius, Math.PI * 2 * Math.random(), Math.PI * 2 * Math.random());
-      dotMesh.position.set(pos.x, pos.y, pos.z);
-      group.add(dotMesh);
-    })
-  }, [])
 
   const randomNum = (minNum, maxNum) => {
     return parseInt(Math.random() * (maxNum - minNum + 1) + minNum, 10);
   }
-  useEffect(() => {
-    initThree();
-    initMap();
-    displayLabel();
-    render();
-    for (let j = 0; j < 200; j++) {
-      const start = randomNum(-3000, -700) / 10;
+
+  // 🌰
+  const flyByPoint = () => {
+    for (let j = 0; j < 20; j++) {
+      const start = randomNum(-30, -70) / 10;
       const end = randomNum(700, 3000) / 10;
       const fr = randomNum(100, 1000) / 1000;
       const fg = randomNum(100, 1000) / 1000;
@@ -362,16 +223,72 @@ export const Map = () => {
       const tr = randomNum(100, 1000) / 1000;
       const tg = randomNum(100, 1000) / 1000;
       const tb = randomNum(100, 1000) / 1000;
-      addflyline(start, end, { r: fr, g: fg, b: fb }, { r: tr, g: tg, b: tb });
+      const line = flyLine.addflyline(start, end, { r: fr, g: fg, b: fb }, { r: tr, g: tg, b: tb });
+      linegroup.add(line);
     }
-    // randomPoint(pointsGroup, radius);
-    // scene.add(pointsGroup);
-    // pointsGroup.children.forEach((item) => {
-    //   addFlyLine(pointsGroup.children[0].position, item.position);
-    // });
-    // scene.add(flylinegroup);
 
-    loop();
+    if (linegroup.length) {
+      for (let i = 0; i < linegroup.length; i++) {
+        const flyline = linegroup[i];
+        if (flyline && flyline.material.uniforms) {
+          const time = flyline.material.uniforms.time.value;
+          const size = flyline.material.uniforms.size.value;
+          if (time > flyline.maxx) {
+            flyline.material.uniforms.time.value = flyline.minx - size;
+          }
+          flyline.material.uniforms.time.value += 1.0;
+        }
+      }
+    }
+    scene.add(linegroup);
+  }
+  // Setup the animation loop.
+  const animate = (time) => {
+    requestAnimationFrame(animate)
+    TWEEN.update(time)
+  }
+
+  // 渲染画布
+  const render = useCallback(() => {
+    const startPoint = {
+      x: 0,
+      y: 0,
+      z: 0
+    }
+    const endPoint = {
+      x: -40,
+      y: 20,
+      z: 0
+    }
+    const heightLimit = 20
+    const flyTime = 10000
+    const lineStyle = {
+      color: 0xcc0000,
+      linewidth: 2
+    }
+    const aCurve = flyByMeshLine.createFlyLine(startPoint, endPoint, heightLimit, flyTime, lineStyle)
+    const tween = new TWEEN.Tween({ endPointIndex: 1 })
+      .to({ endPointIndex: 50 }, flyTime)
+      .onUpdate(({ endPointIndex }) => {
+        const curvePartialData = new CatmullRomCurve3(flyByMeshLine.curveModelData.slice(0, Math.ceil(endPointIndex)))
+        aCurve.geometry.setFromPoints(curvePartialData.getPoints(50));
+        renderer.render(scene, camera);
+      }).start();
+    scene.add(aCurve);
+    requestAnimationFrame(animate)
+    // renderer.render(scene, camera);
+  }, [])
+
+  const onMouseMove = (event) => {
+    event.preventDefault();
+  }
+
+  useEffect(() => {
+    initThree();
+    initMap();
+    // displayLabel();
+    render();
+    // loop();
     document.addEventListener("mousemove", onMouseMove, false);
     window.addEventListener("resize", onWindowResize, false);
   }, []);
