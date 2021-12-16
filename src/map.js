@@ -7,7 +7,7 @@ import mapJson from "./map.json";
 import "./index.css";
 export const Map = () => {
   const posArr = [{ "x": 0.5738958419746141, "y": -0.44114968930852216, "z": 4.9473255920938985 }, { "x": -0.9326350073394328, "y": 2.8399222968004114, "z": -4.00812091773949 }, { "x": 3.469198597393574, "y": 1.2295167303380952, "z": -3.3842206934036057 }, { "x": -2.4019084876611916, "y": -2.190220428765315, "z": 3.7991801866087123 }, { "x": -2.49363689878109, "y": -4.099696049856375, "z": 1.4050862307450966 }, { "x": -2.3729307780326305, "y": 2.840227787960863, "z": 3.3618901878497454 }, { "x": -2.0636200279017873, "y": 0.7444294629976027, "z": -4.493027615657812 }, { "x": 0.47725894517680106, "y": 2.4327372143508037, "z": -4.34212085796347 }, { "x": -2.4777001955161246, "y": -1.2092952460724242, "z": 4.171163716394502 }, { "x": -0.03915748918627658, "y": -0.008362945319338826, "z": 4.999839672648135 }, { "x": 1.5223738738260317, "y": -1.032865814102439, "z": -4.649254348640267 }, { "x": -0.26640112020426315, "y": -4.314854187280748, "z": 2.5121830716848077 }, { "x": -4.031470206741836, "y": -2.606648761952297, "z": -1.3973654511134501 }, { "x": 0.8544382232162094, "y": 1.5274953155132989, "z": 4.683662390031124 }, { "x": 3.0409624989238546, "y": 1.76433738825175, "z": -3.555230043268055 }, { "x": -4.721251023266457, "y": 1.2354922989397954, "z": -1.0878177947459262 }, { "x": 2.1518961827021106, "y": 3.891904027152385, "z": -2.285262755638206 }, { "x": 0.8501960736517479, "y": -2.851729208821255, "z": -4.018060123480341 }, { "x": 2.5631840141785176, "y": 4.263234820997851, "z": -0.5048926326370041 }, { "x": -0.4580143454812531, "y": -2.6523265200067385, "z": 4.213714144386437 }];
-  let map, scene, camera, renderer, pointsGroup = new Group(), flylinegroup = new Group();
+  let map, scene, camera, renderer, pointsGroup = new Group(), flylinegroup = [], linegroup = [];
   const radius = 5;
   const initMap = useCallback(() => {
     const prj = d3geo
@@ -60,6 +60,43 @@ export const Map = () => {
     });
     scene.add(map);
   }, [map, scene])
+
+  const addflyline = (minx, maxx, colorf2, colort2) => {
+    let colorf = colorf2 || {
+      r: 0.0,
+      g: 0.0,
+      b: 0.0
+    };
+    let colort = colort2 || {
+      r: 1.0,
+      g: 1.0,
+      b: 1.0
+    };
+    const curve = new CubicBezierCurve3(
+      new Vector3(minx, 0, minx),
+      new Vector3(minx / 2, maxx % 70 + 100, maxx / 2),
+      new Vector3(maxx / 2, maxx % 70 + 70, maxx / 2),
+      new Vector3(maxx, 0, maxx)
+    );
+    const points = curve.getPoints((maxx - minx) * 5);
+    const geometry = new BufferGeometry().setFromPoints(points);
+    const material = createMaterial("vertex-shader", "fragment-shader-7");
+    const flyline = new Points(geometry, material);
+    flyline.material.uniforms.time.value = minx;
+    flyline.material.uniforms.colorf = {
+      type: 'v3',
+      value: new Vector3(colorf.r, colorf.g, colorf.b)
+    };
+    flyline.material.uniforms.colort = {
+      type: 'v3',
+      value: new Vector3(colort.r, colort.g, colort.b)
+    };
+
+    flyline.minx = minx;
+    flyline.maxx = maxx;
+    linegroup.push(flyline);
+    scene.add(flyline);
+  }
 
   const initThree = useCallback(() => {
     scene = new Scene();
@@ -262,19 +299,22 @@ export const Map = () => {
       p0 = new Vector3(0, 0, 0);
 
     const rayLine = new Ray(p0, getVCenter(v0.clone(), v3.clone()));
+
     let flyline;
     // 顶点坐标
-    const vtop = rayLine.at(hLen / rayLine.at(1).distanceTo(p0));
+    const vtop = rayLine.at(hLen / rayLine.at(1).distanceTo(p0), v3);
 
     // 控制点坐标
     const v1 = getLenVcetor(v0.clone(), vtop, aLen);
     const v2 = getLenVcetor(v3.clone(), vtop, aLen);
 
+    // CatmullRomCurve3
     const curve = new CubicBezierCurve3(v0, v1, v2, v3);
     const points = curve.getPoints(50);
     const geometry = new BufferGeometry().setFromPoints(points);
     geometry.colors = curve.getPoints(50).map((item, index) => index > 25 ? new Color(0xFAE161) : new Color(0xFF0000))
     const material = createMaterial();
+    // meshLine
     flyline = new Points(geometry, material);
     flylinegroup.add(flyline);
   }, [scene])
@@ -304,18 +344,32 @@ export const Map = () => {
       group.add(dotMesh);
     })
   }, [])
+
+  const randomNum = (minNum, maxNum) => {
+    return parseInt(Math.random() * (maxNum - minNum + 1) + minNum, 10);
+  }
   useEffect(() => {
     initThree();
     initMap();
     displayLabel();
     render();
-
-    randomPoint(pointsGroup, radius);
-    scene.add(pointsGroup);
-    pointsGroup.children.forEach((item) => {
-      addFlyLine(pointsGroup.children[0].position, item.position);
-    });
-    scene.add(flylinegroup);
+    for (let j = 0; j < 200; j++) {
+      const start = randomNum(-3000, -700) / 10;
+      const end = randomNum(700, 3000) / 10;
+      const fr = randomNum(100, 1000) / 1000;
+      const fg = randomNum(100, 1000) / 1000;
+      const fb = randomNum(100, 1000) / 1000;
+      const tr = randomNum(100, 1000) / 1000;
+      const tg = randomNum(100, 1000) / 1000;
+      const tb = randomNum(100, 1000) / 1000;
+      addflyline(start, end, { r: fr, g: fg, b: fb }, { r: tr, g: tg, b: tb });
+    }
+    // randomPoint(pointsGroup, radius);
+    // scene.add(pointsGroup);
+    // pointsGroup.children.forEach((item) => {
+    //   addFlyLine(pointsGroup.children[0].position, item.position);
+    // });
+    // scene.add(flylinegroup);
 
     loop();
     document.addEventListener("mousemove", onMouseMove, false);
